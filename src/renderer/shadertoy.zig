@@ -37,8 +37,8 @@ pub const Uniforms = extern struct {
     foreground_color: [4]f32 align(16),
     cursor_color: [4]f32 align(16),
     cursor_text: [4]f32 align(16),
-    selection_background_color: [4]f32 align(16),
     selection_foreground_color: [4]f32 align(16),
+    selection_background_color: [4]f32 align(16),
 };
 
 /// The target to load shaders for.
@@ -422,6 +422,45 @@ test "shadertoy to glsl" {
     defer alloc.free(glsl);
 
     // log.warn("glsl={s}", .{glsl});
+}
+
+test "shadertoy uniforms match the std140 block" {
+    // Offsets glslang assigns the Globals block in shadertoy_prefix.glsl
+    // (glslangValidator -q --reflect-all-block-variables). The struct is
+    // uploaded as raw bytes, so a field out of place hands its value to
+    // whichever uniform sits there in GLSL.
+    const expected = .{
+        .{ "resolution", 0 },
+        .{ "time", 12 },
+        .{ "time_delta", 16 },
+        .{ "frame_rate", 20 },
+        .{ "frame", 24 },
+        .{ "channel_time", 32 },
+        .{ "channel_resolution", 96 },
+        .{ "mouse", 160 },
+        .{ "date", 176 },
+        .{ "sample_rate", 192 },
+        .{ "current_cursor", 208 },
+        .{ "previous_cursor", 224 },
+        .{ "current_cursor_color", 240 },
+        .{ "previous_cursor_color", 256 },
+        .{ "current_cursor_style", 272 },
+        .{ "previous_cursor_style", 276 },
+        .{ "cursor_visible", 280 },
+        .{ "cursor_change_time", 284 },
+        .{ "time_focus", 288 },
+        .{ "focus", 292 },
+        .{ "palette", 304 },
+        .{ "background_color", 4400 },
+        .{ "foreground_color", 4416 },
+        .{ "cursor_color", 4432 },
+        .{ "cursor_text", 4448 },
+        .{ "selection_foreground_color", 4464 },
+        .{ "selection_background_color", 4480 },
+    };
+    inline for (expected) |field| {
+        try std.testing.expectEqual(field[1], @offsetOf(Uniforms, field[0]));
+    }
 }
 
 const test_crt = @embedFile("shaders/test_shadertoy_crt.glsl");
