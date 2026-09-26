@@ -495,6 +495,12 @@ pub fn add(
         step.root_module.link_libcpp = true;
     }
 
+    // PipeWire audio capture for audio-reactive custom shaders.
+    if (self.config.pipewire) {
+        step.root_module.linkSystemLibrary("libpipewire-0.3", dynamic_link_opts);
+        step.root_module.addCSourceFiles(.{ .files = &.{"src/audio/pipewire.c"} });
+    }
+
     // We always require the system SDK so that our system headers are available.
     // This makes things like `os/log.h` available for cross-compiling.
     if (step.rootModuleTarget().os.tag.isDarwin()) {

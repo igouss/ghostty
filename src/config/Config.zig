@@ -3226,6 +3226,37 @@ keybind: Keybinds = .{},
 /// This can be changed at runtime and will affect all open terminals.
 @"custom-shader-animation": CustomShaderAnimation = .true,
 
+/// If true, custom shaders can react to the audio your computer is
+/// playing. Ghostty listens to the default output device (never the
+/// microphone) while any terminal with custom shaders has this enabled,
+/// and exposes these uniforms:
+///
+///   * `float iAudioRMS`, `float iAudioPeak` - the overall volume and
+///     the peak sample level.
+///
+///   * `float iAudioBass`, `float iAudioMid`, `float iAudioTreble` - the
+///     level of 20-250Hz, 250-2000Hz, and 2-16kHz.
+///
+///   * `float iAudioDominantFreq` - the loudest frequency in Hz, or 0.
+///
+///   * `vec4 iAudioSpectrum[32]` - 128 frequency bands, log spaced from
+///     30Hz to 16kHz, packed four to a vec4. The helper
+///     `float audioSpectrum(float x)` returns the level at `x` in [0, 1]
+///     along that range, interpolated between bands.
+///
+///   * `float iSampleRate` - the capture sample rate.
+///
+/// Levels are in [0, 1] on a decibel scale, so quiet music reads lower
+/// than loud music. They rise immediately and fall smoothly. Everything
+/// reads 0 when nothing is playing or when this is disabled.
+///
+/// This requires PipeWire and is only available on Linux. Use
+/// `custom-shader-animation` too, or the shader only redraws when the
+/// terminal changes.
+///
+/// This can be changed at runtime and will affect all open terminals.
+@"custom-shader-audio": bool = false,
+
 /// Bell features to enable if bell support is available in your runtime. Not
 /// all features are available on all runtimes. The format of this is a list of
 /// features to enable separated by commas. If you prefix a feature with `no-`

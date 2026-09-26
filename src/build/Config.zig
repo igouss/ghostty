@@ -31,6 +31,7 @@ font_backend: FontBackend = .freetype,
 x11: bool = false,
 wayland: bool = false,
 sentry: bool = true,
+pipewire: bool = false,
 simd: bool = true,
 i18n: bool = true,
 wasm_shared: bool = true,
@@ -234,6 +235,12 @@ pub fn init(b: *std.Build, appVersion: []const u8, libVersion: []const u8) !Conf
             else => break :sentry false,
         }
     };
+
+    config.pipewire = b.option(
+        bool,
+        "pipewire",
+        "Capture system audio with PipeWire for audio-reactive custom shaders. Default for Linux is true.",
+    ) orelse (target.result.os.tag == .linux);
 
     config.simd = b.option(
         bool,
@@ -664,6 +671,7 @@ pub fn addOptions(self: *const Config, step: *std.Build.Step.Options) !void {
     step.addOption(bool, "x11", self.x11);
     step.addOption(bool, "wayland", self.wayland);
     step.addOption(bool, "sentry", self.sentry);
+    step.addOption(bool, "pipewire", self.pipewire);
     step.addOption(bool, "simd", self.simd);
     step.addOption(bool, "i18n", self.i18n);
     step.addOption(ApprtRuntime, "app_runtime", self.app_runtime);

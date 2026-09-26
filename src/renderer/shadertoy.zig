@@ -7,6 +7,7 @@ const spvcross = @import("spirv_cross");
 const configpkg = @import("../config.zig");
 const compat_file = @import("../lib/compat/file.zig");
 const global = @import("../global.zig");
+const audio = @import("../audio/main.zig");
 
 const log = std.log.scoped(.shadertoy);
 
@@ -41,6 +42,13 @@ pub const Uniforms = extern struct {
     selection_background_color: [4]f32 align(16),
     selection: [3][4]f32 align(16),
     time_copy: f32 align(4),
+    audio_rms: f32 align(4),
+    audio_peak: f32 align(4),
+    audio_bass: f32 align(4),
+    audio_mid: f32 align(4),
+    audio_treble: f32 align(4),
+    audio_dominant_freq: f32 align(4),
+    audio_spectrum: [audio.Analyzer.bands / 4][4]f32 align(16),
 };
 
 /// The target to load shaders for.
@@ -426,11 +434,11 @@ test "shadertoy to glsl" {
     // log.warn("glsl={s}", .{glsl});
 }
 
-test "shadertoy copy uniforms" {
-    const testing = std.testing;
-    const alloc = testing.allocator;
+/// Compile a shader to GLSL and MSL, as loading it on each platform would.
+fn testCrossCompile(src_glsl: []const u8) !void {
+    const alloc = std.testing.allocator;
 
-    const src = try testGlslZ(alloc, test_copy);
+    const src = try testGlslZ(alloc, src_glsl);
     defer alloc.free(src);
 
     var buf: std.Io.Writer.Allocating = .init(alloc);
@@ -446,6 +454,11 @@ test "shadertoy copy uniforms" {
     defer alloc.free(glsl);
     const msl = try mslFromSpv(alloc, spvlist.items);
     defer alloc.free(msl);
+}
+
+test "shadertoy copy and audio uniforms" {
+    try testCrossCompile(test_copy);
+    try testCrossCompile(test_audio);
 }
 
 test "shadertoy uniforms match the std140 block" {
@@ -483,13 +496,22 @@ test "shadertoy uniforms match the std140 block" {
         .{ "selection_background_color", 4480 },
         .{ "selection", 4496 },
         .{ "time_copy", 4544 },
+        .{ "audio_rms", 4548 },
+        .{ "audio_peak", 4552 },
+        .{ "audio_bass", 4556 },
+        .{ "audio_mid", 4560 },
+        .{ "audio_treble", 4564 },
+        .{ "audio_dominant_freq", 4568 },
+        .{ "audio_spectrum", 4576 },
     };
     inline for (expected) |field| {
         try std.testing.expectEqual(field[1], @offsetOf(Uniforms, field[0]));
     }
+    try std.testing.expectEqual(5088, @sizeOf(Uniforms));
 }
 
 const test_crt = @embedFile("shaders/test_shadertoy_crt.glsl");
 const test_invalid = @embedFile("shaders/test_shadertoy_invalid.glsl");
 const test_focus = @embedFile("shaders/test_shadertoy_focus.glsl");
 const test_copy = @embedFile("shaders/test_shadertoy_copy.glsl");
+const test_audio = @embedFile("shaders/test_shadertoy_audio.glsl");

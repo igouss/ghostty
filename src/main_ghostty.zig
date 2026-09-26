@@ -244,6 +244,7 @@ test {
 
     // Libraries
     _ = @import("tripwire.zig");
+    _ = @import("audio/main.zig");
     _ = @import("benchmark/main.zig");
     _ = @import("crash/main.zig");
     _ = @import("datastruct/main.zig");

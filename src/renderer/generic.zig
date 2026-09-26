@@ -22,6 +22,7 @@ const Overlay = @import("Overlay.zig");
 const imagepkg = @import("image.zig");
 const ImageState = imagepkg.State;
 const shadertoy = @import("shadertoy.zig");
+const audio = @import("../audio/main.zig");
 const assert = @import("../quirks.zig").inlineAssert;
 const Allocator = std.mem.Allocator;
 const ArenaAllocator = std.heap.ArenaAllocator;
@@ -146,6 +147,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// Flag to indicate that the selection was copied since the last
         /// frame, so custom shaders can update `iTimeCopy`.
         custom_shader_copied: bool = false,
+
+        /// The shared audio capture, while `custom-shader-audio` is on
+        /// and there are custom shaders to use it.
+        audio_capture: ?*audio.Capture = null,
+
+        /// Smoothed audio levels for the `iAudio*` uniforms.
+        audio_levels: audio.Levels = .{},
 
         /// The most recent scrollbar state. We use this as a cache to
         /// determine if we need to notify the apprt that there was a
@@ -600,6 +608,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             min_contrast: f32,
             padding_color: configpkg.WindowPaddingColor,
             custom_shaders: configpkg.RepeatablePath,
+            custom_shader_audio: bool,
             bg_image: ?configpkg.Path,
             bg_image_opacity: f32,
             bg_image_position: configpkg.BackgroundImagePosition,
@@ -675,6 +684,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .search_selected_foreground = config.@"search-selected-foreground",
 
                     .custom_shaders = custom_shaders,
+                    .custom_shader_audio = config.@"custom-shader-audio",
                     .bg_image = bg_image,
                     .bg_image_opacity = config.@"background-image-opacity",
                     .bg_image_position = config.@"background-image-position",
@@ -779,7 +789,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .channel_resolution = @splat(@splat(0)),
                     .mouse = @splat(0), // not currently updated
                     .date = @splat(0), // not currently updated
-                    .sample_rate = 0, // N/A, we don't have any audio
+                    .sample_rate = 0, // set while custom-shader-audio is on
                     .current_cursor = @splat(0),
                     .previous_cursor = @splat(0),
                     .current_cursor_color = @splat(0),
@@ -799,6 +809,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .selection_foreground_color = @splat(0),
                     .selection = @splat(@splat(0)),
                     .time_copy = 0,
+                    .audio_rms = 0,
+                    .audio_peak = 0,
+                    .audio_bass = 0,
+                    .audio_mid = 0,
+                    .audio_treble = 0,
+                    .audio_dominant_freq = 0,
+                    .audio_spectrum = @splat(@splat(0)),
                 },
                 .bg_image_buffer = undefined,
 
@@ -821,6 +838,7 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             result.updateScreenSizeUniforms();
             result.updateBgImageBuffer();
             try result.prepBackgroundImage();
+            result.syncAudioCapture();
 
             return result;
         }
@@ -850,6 +868,9 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             self.font_shaper_cache.deinit(self.alloc);
 
             self.config.deinit();
+
+            if (self.audio_capture) |capture| capture.release();
+
             self.api.deinit();
 
             self.* = undefined;
@@ -2216,6 +2237,41 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (custom_shaders_changed) {
                 self.reinitialize_shaders = true;
             }
+
+            self.syncAudioCapture();
+        }
+
+        /// Start or stop using the audio capture to match our config.
+        fn syncAudioCapture(self: *Self) void {
+            const want = self.config.custom_shader_audio and
+                self.config.custom_shaders.value.items.len > 0;
+            if (want == (self.audio_capture != null)) return;
+
+            if (want) {
+                self.audio_capture = audio.Capture.acquire() catch |err| {
+                    log.warn("custom-shader-audio unavailable err={}", .{err});
+                    return;
+                };
+            } else {
+                self.audio_capture.?.release();
+                self.audio_capture = null;
+                self.audio_levels = .{};
+                self.updateCustomShaderAudio();
+            }
+        }
+
+        /// Copy `audio_levels` into the custom shader uniforms.
+        fn updateCustomShaderAudio(self: *Self) void {
+            const uniforms = &self.custom_shader_uniforms;
+            const levels = &self.audio_levels;
+            uniforms.sample_rate = if (self.audio_capture != null) audio.Analyzer.sample_rate else 0;
+            uniforms.audio_rms = levels.rms;
+            uniforms.audio_peak = levels.peak;
+            uniforms.audio_bass = levels.bass;
+            uniforms.audio_mid = levels.mid;
+            uniforms.audio_treble = levels.treble;
+            uniforms.audio_dominant_freq = levels.dominant_freq;
+            uniforms.audio_spectrum = @bitCast(levels.spectrum);
         }
 
         /// Resize the screen.
@@ -2586,6 +2642,11 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (self.custom_shader_copied) {
                 uniforms.time_copy = uniforms.time;
                 self.custom_shader_copied = false;
+            }
+
+            if (self.audio_capture) |capture| {
+                self.audio_levels.approach(&capture.read(), uniforms.time_delta);
+                self.updateCustomShaderAudio();
             }
         }
 
