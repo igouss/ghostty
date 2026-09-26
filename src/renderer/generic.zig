@@ -143,6 +143,10 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
         /// shaders to update their state.
         custom_shader_focused_changed: bool = false,
 
+        /// Flag to indicate that the selection was copied since the last
+        /// frame, so custom shaders can update `iTimeCopy`.
+        custom_shader_copied: bool = false,
+
         /// The most recent scrollbar state. We use this as a cache to
         /// determine if we need to notify the apprt that there was a
         /// scrollbar change.
@@ -793,6 +797,8 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
                     .cursor_text = @splat(0),
                     .selection_background_color = @splat(0),
                     .selection_foreground_color = @splat(0),
+                    .selection = @splat(@splat(0)),
+                    .time_copy = 0,
                 },
                 .bg_image_buffer = undefined,
 
@@ -1144,6 +1150,13 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (comptime DisplayLink == void) return false;
             const display_link = self.display_link orelse return false;
             return display_link.isRunning();
+        }
+
+        /// Callback when the selection was copied to the clipboard.
+        ///
+        /// Must be called on the render thread.
+        pub fn copied(self: *Self) void {
+            self.custom_shader_copied = true;
         }
 
         /// Callback when the focus changes for the terminal this is rendering.
@@ -2387,6 +2400,62 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             const cursor_style: renderer.CursorStyle = .fromTerminal(self.terminal_state.cursor.visual_style);
             uniforms.previous_cursor_style = uniforms.current_cursor_style;
             uniforms.current_cursor_style = @as(i32, @intFromEnum(cursor_style));
+
+            self.updateCustomShaderSelection();
+        }
+
+        /// Describe the visible selection as up to three rectangles: its first
+        /// row, the rows in between and its last row. That shape is exact for
+        /// both linear and rectangle selections. Unused rectangles are zero.
+        fn updateCustomShaderSelection(self: *Self) void {
+            const uniforms: *shadertoy.Uniforms = &self.custom_shader_uniforms;
+            uniforms.selection = @splat(@splat(0));
+
+            const rows = self.terminal_state.row_data.slice().items(.selection);
+            var first: ?usize = null;
+            var last: usize = 0;
+            for (rows, 0..) |sel, y| if (sel != null) {
+                if (first == null) first = y;
+                last = y;
+            };
+            const top = first orelse return;
+
+            uniforms.selection[0] = self.customShaderCellRect(rows[top].?, top, top);
+            if (last == top) return;
+            uniforms.selection[2] = self.customShaderCellRect(rows[last].?, last, last);
+            if (last == top + 1) return;
+
+            var middle = rows[top + 1].?;
+            for (rows[top + 2 .. last]) |sel| {
+                const range = sel orelse continue;
+                middle = .{ @min(middle[0], range[0]), @max(middle[1], range[1]) };
+            }
+            uniforms.selection[1] = self.customShaderCellRect(middle, top + 1, last - 1);
+        }
+
+        /// A rectangle of cells (inclusive column range, inclusive rows) in
+        /// the same form as `iCurrentCursor`: `xy` is the -X, +Y corner and
+        /// `zw` the size, in pixels.
+        fn customShaderCellRect(
+            self: *const Self,
+            cols: [2]terminal.size.CellCountInt,
+            top_row: usize,
+            bottom_row: usize,
+        ) [4]f32 {
+            const cell = self.size.cell;
+            const width: f32 = @floatFromInt((@as(u32, cols[1]) - cols[0] + 1) * cell.width);
+            const height: f32 = @floatFromInt((bottom_row - top_row + 1) * cell.height);
+            const origin = (renderer.Coordinate{ .grid = .{
+                .x = cols[0],
+                .y = @intCast(top_row),
+            } }).convert(.surface, self.size).surface;
+            const left: f32 = @floatCast(origin.x);
+            const top: f32 = @floatCast(origin.y);
+            const y = if (GraphicsAPI.custom_shader_y_is_down)
+                top + height
+            else
+                @as(f32, @floatFromInt(self.size.screen.height)) - top;
+            return .{ left, y, width, height };
         }
 
         /// Update per-frame custom shader uniforms.
@@ -2511,6 +2580,12 @@ pub fn Renderer(comptime GraphicsAPI: type) type {
             if (self.custom_shader_focused_changed and self.focused) {
                 uniforms.time_focus = uniforms.time;
                 self.custom_shader_focused_changed = false;
+            }
+
+            // Same for copies: frame time, since the copy arrives async.
+            if (self.custom_shader_copied) {
+                uniforms.time_copy = uniforms.time;
+                self.custom_shader_copied = false;
             }
         }
 

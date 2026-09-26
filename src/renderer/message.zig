@@ -26,6 +26,10 @@ pub const Message = union(enum) {
     /// restarting the timer.
     reset_cursor_blink,
 
+    /// The selection was copied to the clipboard. Custom shaders see
+    /// the frame time of the copy as `iTimeCopy`.
+    copy,
+
     /// Change the font grid. This can happen for any number of reasons
     /// including a font size change, family change, etc.
     font_grid: struct {

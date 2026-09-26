@@ -39,6 +39,8 @@ pub const Uniforms = extern struct {
     cursor_text: [4]f32 align(16),
     selection_foreground_color: [4]f32 align(16),
     selection_background_color: [4]f32 align(16),
+    selection: [3][4]f32 align(16),
+    time_copy: f32 align(4),
 };
 
 /// The target to load shaders for.
@@ -424,6 +426,28 @@ test "shadertoy to glsl" {
     // log.warn("glsl={s}", .{glsl});
 }
 
+test "shadertoy copy uniforms" {
+    const testing = std.testing;
+    const alloc = testing.allocator;
+
+    const src = try testGlslZ(alloc, test_copy);
+    defer alloc.free(src);
+
+    var buf: std.Io.Writer.Allocating = .init(alloc);
+    defer buf.deinit();
+    try spirvFromGlsl(&buf.writer, null, src);
+
+    // TODO: Replace this with an aligned version of Writer.Allocating
+    var spvlist: std.ArrayListAligned(u8, .of(u32)) = .empty;
+    defer spvlist.deinit(alloc);
+    try spvlist.appendSlice(alloc, buf.written());
+
+    const glsl = try glslFromSpv(alloc, spvlist.items);
+    defer alloc.free(glsl);
+    const msl = try mslFromSpv(alloc, spvlist.items);
+    defer alloc.free(msl);
+}
+
 test "shadertoy uniforms match the std140 block" {
     // Offsets glslang assigns the Globals block in shadertoy_prefix.glsl
     // (glslangValidator -q --reflect-all-block-variables). The struct is
@@ -457,6 +481,8 @@ test "shadertoy uniforms match the std140 block" {
         .{ "cursor_text", 4448 },
         .{ "selection_foreground_color", 4464 },
         .{ "selection_background_color", 4480 },
+        .{ "selection", 4496 },
+        .{ "time_copy", 4544 },
     };
     inline for (expected) |field| {
         try std.testing.expectEqual(field[1], @offsetOf(Uniforms, field[0]));
@@ -466,3 +492,4 @@ test "shadertoy uniforms match the std140 block" {
 const test_crt = @embedFile("shaders/test_shadertoy_crt.glsl");
 const test_invalid = @embedFile("shaders/test_shadertoy_invalid.glsl");
 const test_focus = @embedFile("shaders/test_shadertoy_focus.glsl");
+const test_copy = @embedFile("shaders/test_shadertoy_copy.glsl");

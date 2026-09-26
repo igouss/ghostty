@@ -3179,6 +3179,23 @@ keybind: Keybinds = .{},
 ///
 ///  * `vec3 iSelectionForegroundColor` - Selection foreground color (RGB).
 ///
+///  * `vec4 iSelection[3]` - The visible selection, in pixels.
+///
+///    The selection is described as its first row (`iSelection[0]`), the
+///    rows in between (`iSelection[1]`) and its last row (`iSelection[2]`).
+///    Each rectangle uses the same form as `iCurrentCursor`: `xy` is the
+///    -X, +Y corner and `zw` is the width and height. Unused rectangles,
+///    and all three when nothing is selected, have a zero size.
+///
+///  * `float iTimeCopy` - Timestamp of the last copy to the clipboard.
+///
+///    When the selection is copied to the clipboard (with
+///    `copy_to_clipboard`, the mouse, or `copy-on-select = clipboard`, but
+///    not to the selection clipboard alone), this is set to the current
+///    value of `iTime`, so `iTime - iTimeCopy` is the time since the copy.
+///    Pair it with `iSelection` to animate the copied text. With `selection-clear-on-copy` the selection is gone
+///    by the next frame, so `iSelection` is already empty.
+///
 /// If the shader fails to compile, the shader will be ignored. Any errors
 /// related to shader compilation will not show up as configuration errors
 /// and only show up in the log, since shader compilation happens after

@@ -2400,6 +2400,16 @@ fn copySelectionToClipboards(
             .{ clipboard, err },
         );
     };
+
+    // Let custom shaders know the selection was copied to the clipboard
+    // (iTimeCopy). Selection-clipboard copies, like copy-on-select, happen
+    // on every mouse selection, so they don't count. This is purely
+    // cosmetic, so never block on a full mailbox.
+    if (std.mem.indexOfScalar(apprt.Clipboard, clipboards, .standard) == null) return;
+    _ = self.renderer_thread.mailbox.push(global.io(), .copy, .instant);
+    self.queueRender() catch |err| {
+        log.warn("failed to queue render after copy err={}", .{err});
+    };
 }
 
 /// Set the active selection and notify the apprt on a genuine state
